@@ -1,0 +1,44 @@
+{
+  "asn_file": "/config/asns.txt",
+  "output_root": "/data/runs",
+  "history_db_path": "/state/history.sqlite3",
+  "diff_max_items": 200,
+
+  "auto_install_missing_tools": false,
+  "auto_update_tools": false,
+
+  "retries": 2,
+  "retry_backoff_sec": 5.0,
+  "log_level": "INFO",
+  "force": false,
+
+  "naabu_top_ports": 100,
+  "naabu_rate": 300,
+
+  "httpx_threads": 50,
+  "httpx_rate_limit": 150,
+  "httpx_store_responses": true,
+  "httpx_system_chrome": true,
+  "httpx_screenshot_limit_per_asn": 80,
+  "httpx_screenshot_timeout_seconds": 10,
+
+  "katana_enabled": true,
+  "katana_depth": 3,
+  "katana_known_files": "robotstxt,sitemapxml",
+  "katana_crawl_duration": "10m",
+  "katana_max_response_size": 1048576,
+  "katana_request_timeout_seconds": 10,
+  "katana_retry": 1,
+
+  "nuclei_enabled": true,
+  "nuclei_severity": ["critical", "high", "medium"],
+  "nuclei_rate_limit": 100,
+  "nuclei_bulk_size": 25,
+  "nuclei_concurrency": 25,
+  "nuclei_request_timeout_seconds": 10,
+  "nuclei_request_retries": 1,
+  "nuclei_exclude_tags": ["dos", "bruteforce"],
+  "nuclei_redact_keys": ["Authorization", "Cookie", "Set-Cookie", "X-Api-Key"],
+  "nuclei_include_request_response": false,
+  "nuclei_extra_args": []
+}

@@ -1,0 +1,19 @@
+services:
+  scanner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: pd-asn-pipeline:latest
+    container_name: pd-asn-scanner
+    network_mode: host
+    cap_add:
+      - NET_RAW
+    shm_size: "1gb"
+    environment:
+      CONFIG_FILE: /config/config.json
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - ./config:/config:ro
+      - ./data:/data
+      - ./state:/state
+    restart: "no"

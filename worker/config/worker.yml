@@ -1,0 +1,31 @@
+worker:
+  worker_id: "worker-a"
+  control_bind_host: "0.0.0.0"
+  control_bind_port: 8001
+
+  coordinator_api_host: "127.0.0.1"
+  coordinator_api_port: 7000
+
+  work_root: "/var/lib/scanner/work"
+  log_root: "/var/log/scanner"
+  poll_interval_seconds: 5
+  heartbeat_interval_seconds: 30
+  max_parallel_chunks: 1
+
+scanner:
+  image: "pd-asn-pipeline:latest"
+  network_mode: "host"
+  user: "0:0"
+  shm_size: "1g"
+  cap_add:
+    - "NET_RAW"
+  work_mount_in_container: "/work"
+  engine_environment:
+    ENGINE_MODE: "chunk"
+  command_template:
+    - "python3"
+    - "/app/pd_pipeline_pro.py"
+    - "--config"
+    - "/work/config.json"
+    - "--run-dir"
+    - "/work/run"

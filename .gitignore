@@ -1,0 +1,47 @@
+# Secrets and local env
+.env
+.env.*
+!.env.example
+worker/.env
+worker/.env.*
+!worker/.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+*.so
+.venv/
+venv/
+ENV/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log
+logs/
+
+# Local Docker overrides
+docker-compose.override.yml
+
+# Scanner runtime (bind-mounted in compose; restore from backup if needed)
+scanner/data/
+scanner/state/
+*.sqlite3
+
+# Worker runtime paths if ever created beside the repo (compose uses named volumes by default)
+worker/work/
+worker/logs/
+
+# Coverage / test
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/
