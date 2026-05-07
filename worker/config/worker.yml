@@ -20,8 +20,26 @@ scanner:
   cap_add:
     - "NET_RAW"
   work_mount_in_container: "/work"
+  # Passed to every scanner chunk container (docker run -e). See execution_engine.py module docstring.
+  # Defaults match PipelineConfig in pd_pipeline_pro.py unless noted.
+  #
+  # ENGINE_MODE (required for distributed chunks)
+  # Naabu: ENGINE_NAABU_TOP_PORTS, ENGINE_NAABU_RATE, ENGINE_NAABU_SCAN_TYPE (optional), ENGINE_NAABU_EXCLUDE_CDN (default 1)
+  # Httpx: ENGINE_HTTPX_THREADS (50), ENGINE_HTTPX_RATE_LIMIT (150), ENGINE_HTTPX_TIMEOUT (optional)
+  # Tlsx: ENGINE_TLSX_CONCURRENCY (optional -c)
+  # Katana: ENGINE_KATANA_DEPTH (3), ENGINE_KATANA_KNOWN_FILES, ENGINE_KATANA_CRAWL_DURATION (10m),
+  #         ENGINE_KATANA_MAX_RESPONSE_SIZE, ENGINE_KATANA_REQUEST_TIMEOUT, ENGINE_KATANA_RETRY
+  # Nuclei: ENGINE_NUCLEI_SEVERITY, ENGINE_NUCLEI_RATE_LIMIT (100), ENGINE_NUCLEI_CONCURRENCY (25),
+  #         ENGINE_NUCLEI_BULK_SIZE (25), ENGINE_NUCLEI_TIMEOUT (10), ENGINE_NUCLEI_RETRIES (1), ENGINE_NUCLEI_ETAGS (optional)
   engine_environment:
     ENGINE_MODE: "chunk"
+    # Example overrides (uncomment to use):
+    # ENGINE_NAABU_RATE: "5000"
+    # ENGINE_NAABU_TOP_PORTS: "100"
+    # ENGINE_HTTPX_THREADS: "80"
+    # ENGINE_HTTPX_RATE_LIMIT: "200"
+    # ENGINE_TLSX_CONCURRENCY: "30"
+    # ENGINE_NUCLEI_RATE_LIMIT: "150"
   command_template:
     - "python3"
     - "/app/pd_pipeline_pro.py"
