@@ -1,47 +1,3 @@
-"""
-Distributed chunk scanner (ENGINE_MODE=chunk).
-
-Tuning is via environment variables passed from the worker
-``scanner.engine_environment`` in ``worker.yml`` (forwarded as ``docker run -e``).
-
-Supported ENGINE_* variables
-------------------------------
-
-Required for chunk mode:
-  ENGINE_MODE=chunk
-
-Naabu:
-  ENGINE_NAABU_TOP_PORTS (default 100)
-  ENGINE_NAABU_RATE (default 300)
-  ENGINE_NAABU_SCAN_TYPE (optional; e.g. ``s`` for SYN)
-  ENGINE_NAABU_EXCLUDE_CDN (default 1; set 0 to disable -exclude-cdn)
-
-Httpx:
-  ENGINE_HTTPX_THREADS (default 50; ``-t``)
-  ENGINE_HTTPX_RATE_LIMIT (default 150; max req/sec, ``-rl``)
-  ENGINE_HTTPX_TIMEOUT (optional; seconds, ``-timeout``)
-
-Tlsx:
-  ENGINE_TLSX_CONCURRENCY (optional; if set, passed as ``-c``)
-
-Katana:
-  ENGINE_KATANA_DEPTH (default 3; ``-d``)
-  ENGINE_KATANA_KNOWN_FILES (default robotstxt,sitemapxml; ``-kf``)
-  ENGINE_KATANA_CRAWL_DURATION (default 10m; ``-ct``)
-  ENGINE_KATANA_MAX_RESPONSE_SIZE (default 1048576; ``-mrs``)
-  ENGINE_KATANA_REQUEST_TIMEOUT (default 10; ``-timeout``)
-  ENGINE_KATANA_RETRY (default 1; ``-retry``)
-
-Nuclei:
-  ENGINE_NUCLEI_SEVERITY (default critical,high,medium)
-  ENGINE_NUCLEI_RATE_LIMIT (default 100; ``-rl``)
-  ENGINE_NUCLEI_CONCURRENCY (default 25; ``-c``)
-  ENGINE_NUCLEI_BULK_SIZE (default 25; ``-bs``)
-  ENGINE_NUCLEI_TIMEOUT (default 10; ``-timeout``)
-  ENGINE_NUCLEI_RETRIES (default 1; ``-retries``)
-  ENGINE_NUCLEI_ETAGS (optional; comma-separated, ``-etags``)
-"""
-
 from __future__ import annotations
 
 import json
@@ -128,6 +84,7 @@ def run_httpx(cfg: EngineConfig, targets: list[str]) -> dict:
         "httpx",
         "-json",
         "-l", str(cfg.input_file),
+        "-fr",
         "-sc",
         "-title",
         "-server",
@@ -135,40 +92,6 @@ def run_httpx(cfg: EngineConfig, targets: list[str]) -> dict:
         "-jarm",
         "-tls-grab",
         "-asn",
-        "-t", _env_or("50", "ENGINE_HTTPX_THREADS"),
-        "-rl", _env_or("150", "ENGINE_HTTPX_RATE_LIMIT"),
-    ]
-    httpx_timeout = os.environ.get("ENGINE_HTTPX_TIMEOUT")
-    if httpx_timeout and str(httpx_timeout).strip():
-        cmd += ["-timeout", str(httpx_timeout).strip()]
-    _run_to_file(cmd, out)
-    return {"targets": len(targets), "records": _count_lines(out), "artifact": str(out)}
-
-
-def run_tlsx(cfg: EngineConfig, targets: list[str]) -> dict:
-    out = cfg.output_dir / "raw" / "tlsx.jsonl"
-    cmd = ["tlsx", "-j", "-silent", "-l", str(cfg.input_file)]
-    tlsx_c = os.environ.get("ENGINE_TLSX_CONCURRENCY")
-    if tlsx_c and str(tlsx_c).strip():
-        cmd += ["-c", str(tlsx_c).strip()]
-    _run_to_file(cmd, out)
-    return {"targets": len(targets), "records": _count_lines(out), "artifact": str(out)}
-
-
-def run_katana(cfg: EngineConfig, targets: list[str]) -> dict:
-    out = cfg.output_dir / "raw" / "katana.jsonl"
-    cmd = [
-        "katana",
-        "-list", str(cfg.input_file),
-        "-d", _env_or("3", "ENGINE_KATANA_DEPTH"),
-        "-kf", _env_or("robotstxt,sitemapxml", "ENGINE_KATANA_KNOWN_FILES"),
-        "-ct", _env_or("10m", "ENGINE_KATANA_CRAWL_DURATION"),
-        "-mrs", _env_or("1048576", "ENGINE_KATANA_MAX_RESPONSE_SIZE"),
-        "-timeout", _env_or("10", "ENGINE_KATANA_REQUEST_TIMEOUT"),
-        "-retry", _env_or("1", "ENGINE_KATANA_RETRY"),
-        "-jsonl",
-        "-or",
-        "-ob",
     ]
     _run_to_file(cmd, out)
     return {"targets": len(targets), "records": _count_lines(out), "artifact": str(out)}
@@ -179,18 +102,12 @@ def run_nuclei(cfg: EngineConfig, targets: list[str]) -> dict:
     cmd = [
         "nuclei",
         "-l", str(cfg.input_file),
+        "-fr",
         "-severity", _env_or("critical,high,medium", "ENGINE_NUCLEI_SEVERITY"),
-        "-rl", _env_or("100", "ENGINE_NUCLEI_RATE_LIMIT"),
-        "-c", _env_or("25", "ENGINE_NUCLEI_CONCURRENCY"),
-        "-bs", _env_or("25", "ENGINE_NUCLEI_BULK_SIZE"),
-        "-timeout", _env_or("10", "ENGINE_NUCLEI_TIMEOUT"),
-        "-retries", _env_or("1", "ENGINE_NUCLEI_RETRIES"),
+        "-rl", _env_or("50", "ENGINE_NUCLEI_RATE_LIMIT"),
         "-jle", str(out),
         "-silent",
     ]
-    etags = os.environ.get("ENGINE_NUCLEI_ETAGS")
-    if etags and str(etags).strip():
-        cmd += ["-etags", str(etags).strip()]
     proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     if proc.returncode != 0:
         raise RuntimeError(f"command failed ({proc.returncode}): {' '.join(cmd)}\n{proc.stderr}")
@@ -204,14 +121,12 @@ def run_chunk_engine_mode() -> int:
 
     targets = _read_targets(cfg.input_file)
 
-    if cfg.stage not in {"naabu", "httpx", "tlsx", "katana", "nuclei"}:
+    if cfg.stage not in {"naabu", "httpx", "nuclei"}:
         raise RuntimeError(f"unsupported engine stage: {cfg.stage}")
 
     runners = {
         "naabu": run_naabu,
         "httpx": run_httpx,
-        "tlsx": run_tlsx,
-        "katana": run_katana,
         "nuclei": run_nuclei,
     }
 

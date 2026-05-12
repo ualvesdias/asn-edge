@@ -32,7 +32,14 @@ STOP_EVENT = Event()
 def _heartbeat_loop(client: CoordinatorClient, worker_id: str, chunk_id: str, cancel_event: Event) -> None:
     while not cancel_event.wait(CFG.worker.heartbeat_interval_seconds):
         try:
-            client.heartbeat(worker_id, chunk_id, {"state": "running"})
+            if not client.heartbeat(worker_id, chunk_id, {"state": "running"}):
+                print(f"[heartbeat] coordinator no longer holds lease worker={worker_id} chunk={chunk_id}; fail+cancel", flush=True)
+                try:
+                    client.fail(worker_id, chunk_id, "chunk lease no longer active at coordinator (heartbeat)")
+                except Exception as fail_e:
+                    print(f"[heartbeat] fail after lease lost chunk_id={chunk_id}: {fail_e}", flush=True)
+                cancel_event.set()
+                return
         except Exception:
             pass
 

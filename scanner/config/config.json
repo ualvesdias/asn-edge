@@ -13,7 +13,7 @@
   "force": false,
 
   "naabu_top_ports": 100,
-  "naabu_rate": 300,
+  "naabu_rate": 5000,
 
   "httpx_threads": 50,
   "httpx_rate_limit": 150,
@@ -21,14 +21,6 @@
   "httpx_system_chrome": true,
   "httpx_screenshot_limit_per_asn": 80,
   "httpx_screenshot_timeout_seconds": 10,
-
-  "katana_enabled": true,
-  "katana_depth": 3,
-  "katana_known_files": "robotstxt,sitemapxml",
-  "katana_crawl_duration": "10m",
-  "katana_max_response_size": 1048576,
-  "katana_request_timeout_seconds": 10,
-  "katana_retry": 1,
 
   "nuclei_enabled": true,
   "nuclei_severity": ["critical", "high", "medium"],

@@ -51,8 +51,6 @@ class PipelineConfig:
     naabu_bin: str = "naabu"
     dnsx_bin: str = "dnsx"
     httpx_bin: str = "httpx"
-    tlsx_bin: str = "tlsx"
-    katana_bin: str = "katana"
     nuclei_bin: str = "nuclei"
 
     # Stage timeouts
@@ -60,8 +58,6 @@ class PipelineConfig:
     dnsx_timeout_sec: int = 3600
     httpx_timeout_sec: int = 21600
     screenshots_timeout_sec: int = 7200
-    tlsx_timeout_sec: int = 7200
-    katana_timeout_sec: int = 21600
     nuclei_timeout_sec: int = 43200
 
     # naabu
@@ -75,15 +71,6 @@ class PipelineConfig:
     httpx_system_chrome: bool = False
     httpx_screenshot_limit_per_asn: int = 80
     httpx_screenshot_timeout_seconds: int = 10
-
-    # katana
-    katana_enabled: bool = True
-    katana_depth: int = 3
-    katana_known_files: str = "robotstxt,sitemapxml"
-    katana_crawl_duration: str = "10m"
-    katana_max_response_size: int = 1_048_576
-    katana_request_timeout_seconds: int = 10
-    katana_retry: int = 1
 
     # nuclei
     nuclei_enabled: bool = True
@@ -1021,7 +1008,7 @@ class CommandRunner:
 
 
 class Pipeline:
-    TOOL_NAMES = ["naabu", "dnsx", "httpx", "tlsx", "katana", "nuclei"]
+    TOOL_NAMES = ["naabu", "dnsx", "httpx", "nuclei"]
 
     def __init__(self, cfg: PipelineConfig, run_dir: Path):
         self.cfg = cfg
@@ -1207,8 +1194,6 @@ class Pipeline:
             "naabu": self.cfg.naabu_bin,
             "dnsx": self.cfg.dnsx_bin,
             "httpx": self.cfg.httpx_bin,
-            "tlsx": self.cfg.tlsx_bin,
-            "katana": self.cfg.katana_bin,
             "nuclei": self.cfg.nuclei_bin,
         }
 
@@ -1299,8 +1284,6 @@ class Pipeline:
             self.stage_ptr(asn)
             self.stage_httpx(asn)
             self.stage_screenshots(asn)
-            self.stage_tlsx(asn)
-            self.stage_katana(asn)
             self.stage_nuclei(asn)
 
         self.stage_aggregate(asns)
@@ -1447,6 +1430,7 @@ class Pipeline:
         cmd = [
             self.cfg.httpx_bin,
             "-j",
+            "-fr",
             "-sc",
             "-title",
             "-server",
@@ -1517,6 +1501,7 @@ class Pipeline:
         cmd = [
             self.cfg.httpx_bin,
             "-j",
+            "-fr",
             "-ss",
             "-esb",
             "-ehb",
@@ -1555,134 +1540,6 @@ class Pipeline:
             self.db.end_stage(asn, "screenshots", "failed", note=str(e))
             raise
 
-    def stage_tlsx(self, asn: str) -> None:
-        asn_root = self.asn_dir(asn)
-        http_dir = asn_root / "exposure" / "http"
-        live_urls_file = http_dir / "live_urls.txt"
-
-        out_dir = ensure_dir(asn_root / "exposure" / "tls")
-        jsonl_file = out_dir / "tlsx.jsonl"
-        dns_names_file = out_dir / "tls_dns_names.txt"
-        outputs = [jsonl_file, dns_names_file]
-
-        if self.stage_should_skip(asn, "tlsx", outputs):
-            self.log.info("[%s] skip tlsx", asn)
-            return
-
-        stdout_file = jsonl_file
-        stderr_file = self.logs_dir / f"{slug(asn)}.tlsx.stderr.txt"
-        cmd = [self.cfg.tlsx_bin, "-j", "-silent"]
-
-        self.db.begin_stage(asn, "tlsx", cmd, stdout_file, stderr_file)
-        try:
-            https_targets = []
-            for url in read_lines(live_urls_file):
-                if url.startswith("https://"):
-                    hp = parse_url_hostport(url)
-                    if hp:
-                        https_targets.append(hp)
-
-            if not https_targets:
-                touch_empty(jsonl_file)
-                touch_empty(dns_names_file)
-                self.db.end_stage(
-                    asn, "tlsx", "success", metrics={"tls_records": 0, "dns_names": 0}
-                )
-                return
-
-            write_lines(out_dir / "https_targets.txt", https_targets)
-
-            self.runner.run(
-                cmd,
-                stdout_file,
-                stderr_file,
-                stdin_text="\n".join(sorted(set(https_targets))) + "\n",
-                timeout_sec=self.cfg.tlsx_timeout_sec,
-            )
-
-            dns_names = []
-            for row in iter_jsonl(jsonl_file):
-                cn = row.get("subject_cn")
-                if isinstance(cn, str) and cn.strip():
-                    dns_names.append(cn.strip())
-                sans = row.get("subject_an")
-                if isinstance(sans, list):
-                    dns_names.extend(str(x).strip() for x in sans if str(x).strip())
-
-            write_lines(dns_names_file, dns_names)
-            metrics = {
-                "tls_records": sum(1 for _ in iter_jsonl(jsonl_file)),
-                "dns_names": len(read_lines(dns_names_file)),
-            }
-            self.db.end_stage(asn, "tlsx", "success", metrics=metrics)
-        except Exception as e:
-            self.db.end_stage(asn, "tlsx", "failed", note=str(e))
-            raise
-
-    def stage_katana(self, asn: str) -> None:
-        if not self.cfg.katana_enabled:
-            self.db.end_stage(
-                asn, "katana", "success", note="disabled", metrics={"enabled": False}
-            )
-            return
-
-        asn_root = self.asn_dir(asn)
-        http_dir = asn_root / "exposure" / "http"
-        live_urls_file = http_dir / "live_urls.txt"
-
-        out_dir = ensure_dir(asn_root / "content")
-        jsonl_file = out_dir / "katana.jsonl"
-        outputs = [jsonl_file]
-
-        if self.stage_should_skip(asn, "katana", outputs):
-            self.log.info("[%s] skip katana", asn)
-            return
-
-        stdout_file = jsonl_file
-        stderr_file = self.logs_dir / f"{slug(asn)}.katana.stderr.txt"
-        cmd = [
-            self.cfg.katana_bin,
-            "-list",
-            str(live_urls_file),
-            "-d",
-            str(self.cfg.katana_depth),
-            "-kf",
-            self.cfg.katana_known_files,
-            "-ct",
-            self.cfg.katana_crawl_duration,
-            "-mrs",
-            str(self.cfg.katana_max_response_size),
-            "-timeout",
-            str(self.cfg.katana_request_timeout_seconds),
-            "-retry",
-            str(self.cfg.katana_retry),
-            "-iqp",
-            "-j",
-            "-or",
-            "-ob",
-        ]
-
-        self.db.begin_stage(asn, "katana", cmd, stdout_file, stderr_file)
-        try:
-            if not read_lines(live_urls_file):
-                touch_empty(jsonl_file)
-                self.db.end_stage(
-                    asn, "katana", "success", metrics={"katana_records": 0}
-                )
-                return
-
-            self.runner.run(
-                cmd,
-                stdout_file,
-                stderr_file,
-                timeout_sec=self.cfg.katana_timeout_sec,
-            )
-            metrics = {"katana_records": sum(1 for _ in iter_jsonl(jsonl_file))}
-            self.db.end_stage(asn, "katana", "success", metrics=metrics)
-        except Exception as e:
-            self.db.end_stage(asn, "katana", "failed", note=str(e))
-            raise
-
     def stage_nuclei(self, asn: str) -> None:
         if not self.cfg.nuclei_enabled:
             self.db.end_stage(
@@ -1710,6 +1567,7 @@ class Pipeline:
         stderr_file = self.logs_dir / f"{slug(asn)}.nuclei.stderr.txt"
         cmd = [
             self.cfg.nuclei_bin,
+            "-fr",
             "-l",
             str(live_urls_file),
             "-severity",
@@ -2155,8 +2013,6 @@ class Pipeline:
             self.aggregate_dir / "naabu.jsonl",
             self.aggregate_dir / "httpx.jsonl",
             self.aggregate_dir / "live_urls.txt",
-            self.aggregate_dir / "tlsx.jsonl",
-            self.aggregate_dir / "katana.jsonl",
             self.aggregate_dir / "nuclei.jsonl",
             self.aggregate_dir / "summary.json",
         ]
@@ -2174,11 +2030,9 @@ class Pipeline:
             naabu_out = self.aggregate_dir / "naabu.jsonl"
             httpx_out = self.aggregate_dir / "httpx.jsonl"
             live_urls_out = self.aggregate_dir / "live_urls.txt"
-            tlsx_out = self.aggregate_dir / "tlsx.jsonl"
-            katana_out = self.aggregate_dir / "katana.jsonl"
             nuclei_out = self.aggregate_dir / "nuclei.jsonl"
 
-            for p in (naabu_out, httpx_out, tlsx_out, katana_out, nuclei_out):
+            for p in (naabu_out, httpx_out, nuclei_out):
                 p.parent.mkdir(parents=True, exist_ok=True)
                 p.write_text("", encoding="utf-8")
 
@@ -2188,8 +2042,6 @@ class Pipeline:
             with (
                 naabu_out.open("w", encoding="utf-8") as f_naabu,
                 httpx_out.open("w", encoding="utf-8") as f_httpx,
-                tlsx_out.open("w", encoding="utf-8") as f_tlsx,
-                katana_out.open("w", encoding="utf-8") as f_katana,
                 nuclei_out.open("w", encoding="utf-8") as f_nuclei,
             ):
                 for asn in asns:
@@ -2200,12 +2052,6 @@ class Pipeline:
                     )
                     httpx_rows = list(
                         iter_jsonl(asn_root / "exposure" / "http" / "httpx.jsonl")
-                    )
-                    tlsx_rows = list(
-                        iter_jsonl(asn_root / "exposure" / "tls" / "tlsx.jsonl")
-                    )
-                    katana_rows = list(
-                        iter_jsonl(asn_root / "content" / "katana.jsonl")
                     )
                     nuclei_rows = list(
                         iter_jsonl(asn_root / "findings" / "nuclei.jsonl")
@@ -2221,8 +2067,6 @@ class Pipeline:
                         ),
                         "open_port_records": len(naabu_rows),
                         "live_urls": len(live_urls),
-                        "tls_records": len(tlsx_rows),
-                        "katana_records": len(katana_rows),
                         "nuclei_findings": len(nuclei_rows),
                     }
 
@@ -2232,12 +2076,6 @@ class Pipeline:
                     for row in httpx_rows:
                         row["_asn"] = asn
                         f_httpx.write(json.dumps(row, ensure_ascii=False) + "\n")
-                    for row in tlsx_rows:
-                        row["_asn"] = asn
-                        f_tlsx.write(json.dumps(row, ensure_ascii=False) + "\n")
-                    for row in katana_rows:
-                        row["_asn"] = asn
-                        f_katana.write(json.dumps(row, ensure_ascii=False) + "\n")
                     for row in nuclei_rows:
                         row["_asn"] = asn
                         f_nuclei.write(json.dumps(row, ensure_ascii=False) + "\n")
@@ -2267,8 +2105,6 @@ class Pipeline:
     ) -> dict[str, Any]:
         naabu_rows = load_jsonl(self.aggregate_dir / "naabu.jsonl")
         httpx_rows = load_jsonl(self.aggregate_dir / "httpx.jsonl")
-        tlsx_rows = load_jsonl(self.aggregate_dir / "tlsx.jsonl")
-        katana_rows = load_jsonl(self.aggregate_dir / "katana.jsonl")
         nuclei_rows = load_jsonl(self.aggregate_dir / "nuclei.jsonl")
 
         ports = Counter()
@@ -2378,22 +2214,6 @@ class Pipeline:
 
         top_findings.sort(key=lambda x: (-x["weight"], x["name"], x["target"]))
 
-        tls_issuers = Counter()
-        cert_subjects = []
-        for row in tlsx_rows:
-            issuer = row.get("issuer_cn")
-            if issuer:
-                tls_issuers[str(issuer)] += 1
-            cert_subjects.append(
-                {
-                    "asn": row.get("_asn", ""),
-                    "host": f"{row.get('host', '')}:{row.get('port', '')}",
-                    "subject_cn": row.get("subject_cn", ""),
-                    "issuer_cn": row.get("issuer_cn", ""),
-                    "not_after": row.get("not_after", ""),
-                }
-            )
-
         return {
             "generated_at": utc_now(),
             "run_dir": str(self.run_dir),
@@ -2402,8 +2222,6 @@ class Pipeline:
                 "open_port_records": len(naabu_rows),
                 "httpx_records": len(httpx_rows),
                 "live_urls": len(read_lines(self.aggregate_dir / "live_urls.txt")),
-                "tls_records": len(tlsx_rows),
-                "katana_records": len(katana_rows),
                 "nuclei_findings": len(nuclei_rows),
             },
             "severity_counts": dict(severity_counts),
@@ -2414,8 +2232,6 @@ class Pipeline:
             "top_findings": top_findings[:200],
             "interesting_assets": interesting_assets[:200],
             "management_port_hits": mgmt_port_hits[:200],
-            "tls_issuers": tls_issuers.most_common(25),
-            "cert_subjects": cert_subjects[:200],
             "per_asn": summary_per_asn,
         }
 
@@ -2527,8 +2343,6 @@ a {{ text-decoration: none; }}
                 f"<td>{r.get('ptr_domains', 0)}</td>"
                 f"<td>{r.get('open_port_records', 0)}</td>"
                 f"<td>{r.get('live_urls', 0)}</td>"
-                f"<td>{r.get('tls_records', 0)}</td>"
-                f"<td>{r.get('katana_records', 0)}</td>"
                 f"<td>{r.get('nuclei_findings', 0)}</td>"
                 "</tr>"
             )
@@ -2662,8 +2476,6 @@ code {{ background:#f3f3f3; padding:2px 4px; border-radius:4px; }}
     <div class="card"><strong>ASNs</strong><br>{counts.get("asns", 0)}</div>
     <div class="card"><strong>Open port records</strong><br>{counts.get("open_port_records", 0)}</div>
     <div class="card"><strong>Live URLs</strong><br>{counts.get("live_urls", 0)}</div>
-    <div class="card"><strong>TLS records</strong><br>{counts.get("tls_records", 0)}</div>
-    <div class="card"><strong>Crawled endpoints</strong><br>{counts.get("katana_records", 0)}</div>
     <div class="card"><strong>Nuclei findings</strong><br>{counts.get("nuclei_findings", 0)}</div>
 </div>
 
@@ -2708,7 +2520,7 @@ code {{ background:#f3f3f3; padding:2px 4px; border-radius:4px; }}
 <h2>Per-ASN summary</h2>
 <table>
 <thead>
-<tr><th>ASN</th><th>CIDRs</th><th>PTR</th><th>Ports</th><th>Live URLs</th><th>TLS</th><th>Katana</th><th>Nuclei</th></tr>
+<tr><th>ASN</th><th>CIDRs</th><th>PTR</th><th>Ports</th><th>Live URLs</th><th>Nuclei</th></tr>
 </thead>
 <tbody>{"".join(asn_rows)}</tbody>
 </table>

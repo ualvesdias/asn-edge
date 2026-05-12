@@ -1,24 +1,43 @@
+# =============================================================================
+# Worker runtime config (mounted into worker-api as /app/config/worker.yml)
+# Loaded by app/settings.py; WORKER_ID env overrides worker.worker_id if set.
+# =============================================================================
+
 worker:
+  # Unique id across the fleet; must match coordinator.yml workers[].worker_id for clear /health rows.
   worker_id: "worker-a"
+  # FastAPI /health and cancel API bind (inside worker-api network namespace).
   control_bind_host: "0.0.0.0"
   control_bind_port: 8001
 
+  # Base URL for outbound register/lease/heartbeat/complete/fail (must resolve INSIDE worker-api).
+  # If worker-api uses bridge networking, 127.0.0.1 is usually WRONG unless something forwards to coordinator.
   coordinator_api_host: "127.0.0.1"
   coordinator_api_port: 7000
 
+  # Chunk filesystem roots inside worker-api; must match docker-compose volume mounts below.
   work_root: "/var/lib/scanner/work"
   log_root: "/var/log/scanner"
+
+  # Lease loop cadence and concurrent chunk execution cap per worker.
   poll_interval_seconds: 5
   heartbeat_interval_seconds: 30
   max_parallel_chunks: 1
 
+# -----------------------------------------------------------------------------
+# scanner: settings for docker run of pd-asn-pipeline chunk containers (NOT worker-api image).
+# -----------------------------------------------------------------------------
 scanner:
+  # Image must exist on the Docker host (docker compose build in asn-edge/scanner).
   image: "pd-asn-pipeline:latest"
+  # Passed to docker run --network (chunk containers often need host for raw sockets).
   network_mode: "host"
+  # docker run --user (image runs tools as this uid:gid).
   user: "0:0"
   shm_size: "1g"
   cap_add:
     - "NET_RAW"
+  # Chunk dir from work_root is mounted here inside the scan container; paths in engine_* use /work.
   work_mount_in_container: "/work"
   # Passed to every scanner chunk container (docker run -e). See execution_engine.py module docstring.
   # Defaults match PipelineConfig in pd_pipeline_pro.py unless noted.
@@ -26,9 +45,6 @@ scanner:
   # ENGINE_MODE (required for distributed chunks)
   # Naabu: ENGINE_NAABU_TOP_PORTS, ENGINE_NAABU_RATE, ENGINE_NAABU_SCAN_TYPE (optional), ENGINE_NAABU_EXCLUDE_CDN (default 1)
   # Httpx: ENGINE_HTTPX_THREADS (50), ENGINE_HTTPX_RATE_LIMIT (150), ENGINE_HTTPX_TIMEOUT (optional)
-  # Tlsx: ENGINE_TLSX_CONCURRENCY (optional -c)
-  # Katana: ENGINE_KATANA_DEPTH (3), ENGINE_KATANA_KNOWN_FILES, ENGINE_KATANA_CRAWL_DURATION (10m),
-  #         ENGINE_KATANA_MAX_RESPONSE_SIZE, ENGINE_KATANA_REQUEST_TIMEOUT, ENGINE_KATANA_RETRY
   # Nuclei: ENGINE_NUCLEI_SEVERITY, ENGINE_NUCLEI_RATE_LIMIT (100), ENGINE_NUCLEI_CONCURRENCY (25),
   #         ENGINE_NUCLEI_BULK_SIZE (25), ENGINE_NUCLEI_TIMEOUT (10), ENGINE_NUCLEI_RETRIES (1), ENGINE_NUCLEI_ETAGS (optional)
   engine_environment:
@@ -38,8 +54,8 @@ scanner:
     # ENGINE_NAABU_TOP_PORTS: "100"
     # ENGINE_HTTPX_THREADS: "80"
     # ENGINE_HTTPX_RATE_LIMIT: "200"
-    # ENGINE_TLSX_CONCURRENCY: "30"
     # ENGINE_NUCLEI_RATE_LIMIT: "150"
+  # Appended after image on docker run; CONFIG_FILE etc. are injected separately by docker_launcher.
   command_template:
     - "python3"
     - "/app/pd_pipeline_pro.py"

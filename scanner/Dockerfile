@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN go install -v github.com/projectdiscovery/pdtm/cmd/pdtm@latest
 
 # Only the PD tools still used by the pipeline
-RUN /go/bin/pdtm -i dnsx,httpx,katana,naabu,nuclei,tlsx
+RUN /go/bin/pdtm -i dnsx,httpx,naabu,nuclei
 
 FROM python:3.12-slim-bookworm
 

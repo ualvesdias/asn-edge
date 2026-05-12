@@ -29,15 +29,20 @@ class CoordinatorClient:
         resp.raise_for_status()
         return resp.json().get("chunk")
 
-    def heartbeat(self, worker_id: str, chunk_id: str, progress: dict) -> None:
-        self.client.post(
+    def heartbeat(self, worker_id: str, chunk_id: str, progress: dict) -> bool:
+        resp = self.client.post(
             f"{self.base_url}/api/v1/workers/heartbeat",
             json={
                 "worker_id": worker_id,
                 "chunk_id": chunk_id,
                 "progress": progress,
             },
-        ).raise_for_status()
+        )
+        resp.raise_for_status()
+        body = resp.json()
+        if "chunk_lease_active" in body:
+            return bool(body["chunk_lease_active"])
+        return True
 
     def upload_artifacts(self, chunk_id: str, artifact_paths: list[Path]) -> list[dict]:
         files = []

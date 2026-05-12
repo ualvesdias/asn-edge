@@ -1,17 +1,31 @@
+# =============================================================================
+# Worker stack: worker-api (build context = parent asn-edge/)
+# See README.md in this directory for bind-mount / coordinator tunnel checklist.
+# =============================================================================
 services:
   worker-api:
     build:
+      # Dockerfile COPYs ../shared and ../worker — run compose from asn-edge/worker/.
       context: ..
       dockerfile: worker/Dockerfile
     environment:
+      # Path inside image to worker.yml (mounted read-only below).
       WORKER_CONFIG: /app/config/worker.yml
+      # Overrides worker.worker_id in yaml when set (copy to .env; unique per host).
       WORKER_ID: ${WORKER_ID}
     volumes:
+      # Hot-reload / edit worker.yml without image rebuild.
       - ./config:/app/config:ro
+      # Required: worker launches sibling containers via host Docker.
       - /var/run/docker.sock:/var/run/docker.sock
+      # Chunk work dirs. If worker-api sees "Missing /work/config.json" in scanner logs while
+      # config.json exists under work_root here, bind a HOST path instead of a named volume
+      # (e.g. - /srv/scanner/work:/var/lib/scanner/work) so docker run -v uses a daemon-visible path.
       - worker_work:/var/lib/scanner/work
       - worker_logs:/var/log/scanner
     ports:
+      # Published on Docker host loopback (SSH -L from coordinator often targets worker:8001).
+      # If you set network_mode: host on this service, Compose discards this mapping—remove or ignore warning.
       - "127.0.0.1:8001:8001"
     restart: unless-stopped
 
